@@ -213,6 +213,12 @@ public class CBEmbeddedSecurityController implements SMAdminController, SMAuthen
         }
     }
 
+    @NotNull
+    @Override
+    public SMTeam[] getUserTeams() throws DBException {
+        return getUserTeams(getUserIdOrThrow());
+    }
+
     @Override
     public SMUser getUserById(String userId) throws DBException {
         try (Connection dbCon = database.openConnection()) {
@@ -259,6 +265,12 @@ public class CBEmbeddedSecurityController implements SMAdminController, SMAuthen
         } catch (SQLException e) {
             throw new DBCException("Error while searching credentials", e);
         }
+    }
+
+    @NotNull
+    @Override
+    public SMUser getCurrentUser() throws DBException {
+        return getUserById(getUserIdOrThrow());
     }
 
     @NotNull
@@ -353,7 +365,8 @@ public class CBEmbeddedSecurityController implements SMAdminController, SMAuthen
     }
 
     @Override
-    public Map<String, Object> getUserParameters(String userId) throws DBCException {
+    public Map<String, Object> getUserParameters() throws DBCException {
+        String userId = getUserIdOrThrow();
         try (Connection dbCon = database.openConnection()) {
             Map<String, Object> result = new LinkedHashMap<>();
             // Read users
@@ -374,7 +387,8 @@ public class CBEmbeddedSecurityController implements SMAdminController, SMAuthen
     }
 
     @Override
-    public void setUserParameter(String userId, String name, Object value) throws DBException {
+    public void setUserParameter(String name, Object value) throws DBException {
+        String userId = getUserIdOrThrow();
         try (Connection dbCon = database.openConnection()) {
             try (JDBCTransaction txn = new JDBCTransaction(dbCon)) {
                 if (value == null) {
@@ -461,7 +475,19 @@ public class CBEmbeddedSecurityController implements SMAdminController, SMAuthen
     }
 
     @Override
-    public void setUserCredentials(@NotNull String userId, @NotNull String authProviderId, @NotNull Map<String, Object> credentials) throws DBException {
+    public void setUserCredentials(@NotNull String authProviderId,
+                                   @NotNull Map<String, Object> credentials
+    ) throws DBException {
+        String userId = getUserIdOrThrow();
+        setUserCredentials(userId, authProviderId, credentials);
+    }
+
+    @Override
+    public void setUserCredentials(
+        @NotNull String userId,
+        @NotNull String authProviderId,
+        @NotNull Map<String, Object> credentials
+    ) throws DBException {
         var existUserByCredentials = findUserByCredentials(authProviderId, credentials);
         if (existUserByCredentials != null && !existUserByCredentials.equals(userId)) {
             throw new DBException("Another user is already linked to the specified credentials");
@@ -485,9 +511,11 @@ public class CBEmbeddedSecurityController implements SMAdminController, SMAuthen
         }
         try (Connection dbCon = database.openConnection()) {
             try (JDBCTransaction txn = new JDBCTransaction(dbCon)) {
-                JDBCUtils.executeStatement(dbCon, "DELETE FROM CB_USER_CREDENTIALS WHERE USER_ID=? AND PROVIDER_ID=?", userId, authProvider.getId());
+                JDBCUtils.executeStatement(dbCon, "DELETE FROM CB_USER_CREDENTIALS WHERE USER_ID=? AND PROVIDER_ID=?", userId,
+                    authProvider.getId());
                 if (!CommonUtils.isEmpty(credentials)) {
-                    try (PreparedStatement dbStat = dbCon.prepareStatement("INSERT INTO CB_USER_CREDENTIALS(USER_ID,PROVIDER_ID,CRED_ID,CRED_VALUE) VALUES(?,?,?,?)")) {
+                    try (PreparedStatement dbStat = dbCon.prepareStatement(
+                        "INSERT INTO CB_USER_CREDENTIALS(USER_ID,PROVIDER_ID,CRED_ID,CRED_VALUE) VALUES(?,?,?,?)")) {
                         for (String[] cred : transformedCredentials) {
                             if (cred == null) {
                                 continue;
@@ -599,6 +627,17 @@ public class CBEmbeddedSecurityController implements SMAdminController, SMAuthen
         } catch (SQLException e) {
             throw new DBCException("Error reading user credentials", e);
         }
+    }
+
+    @NotNull
+    @Override
+    public Map<String, Object> getUserCredentials(@NotNull String authProviderId) throws DBException {
+        return getUserCredentials(getUserIdOrThrow(), authProviderId);
+    }
+
+    @Override
+    public String[] getUserLinkedProviders() throws DBException {
+        return getUserLinkedProviders(getUserIdOrThrow());
     }
 
     @Override
@@ -1171,7 +1210,14 @@ public class CBEmbeddedSecurityController implements SMAdminController, SMAuthen
             }
 
             SMTokens smTokens = findTokenBySmSession(smSessionId);
-            SMAuthPermissions authPermissions = getTokenPermissions(smTokens.getSmAccessToken());
+
+            String smAccessToken = smTokens.getSmAccessToken();
+            if (smAccessToken == null) {
+                throw new SMException("Token not found in session");
+            }
+
+            SMAuthPermissions authPermissions = getTokenPermissions(smAccessToken);
+
             var successAuthStatus = SMAuthInfo.success(
                 authId,
                 smTokens.getSmAccessToken(),
@@ -1300,7 +1346,7 @@ public class CBEmbeddedSecurityController implements SMAdminController, SMAuthen
         if (!isMainAuthSession) {
             //this is an additional authorization and we should to return the original permissions and  userId
             smTokens = findTokenBySmSession(authAttemptSessionInfo.getSmSessionId());
-            permissions = getTokenPermissions(smTokens.getSmAccessToken());
+            permissions = getTokenPermissions();
         }
         String activeUserId = permissions == null ? null : permissions.getUserId();
 
@@ -1530,12 +1576,21 @@ public class CBEmbeddedSecurityController implements SMAdminController, SMAuthen
     }
 
     @Override
-    public SMAuthPermissions getTokenPermissions(String token) throws DBException {
+    public SMAuthPermissions getTokenPermissions() throws DBException {
+        SMCredentials activeUserCredentials = credentialsProvider.getActiveUserCredentials();
+        if (activeUserCredentials == null || activeUserCredentials.getSmToken() == null) {
+            throw new SMException("User not authenticated");
+        }
+        return getTokenPermissions(activeUserCredentials.getSmToken());
+    }
+
+    private SMAuthPermissions getTokenPermissions(@NotNull String token) throws DBException {
         String userId;
         String sessionId;
         String authRole;
         try (Connection dbCon = database.openConnection();
-             PreparedStatement dbStat = dbCon.prepareStatement("SELECT USER_ID, EXPIRATION_TIME, SESSION_ID, AUTH_ROLE FROM CB_AUTH_TOKEN WHERE TOKEN_ID=?");
+             PreparedStatement dbStat = dbCon.prepareStatement(
+                 "SELECT USER_ID, EXPIRATION_TIME, SESSION_ID, AUTH_ROLE FROM CB_AUTH_TOKEN WHERE TOKEN_ID=?");
         ) {
             dbStat.setString(1, token);
             try (var dbResult = dbStat.executeQuery()) {
@@ -1597,7 +1652,8 @@ public class CBEmbeddedSecurityController implements SMAdminController, SMAuthen
     }
 
     @Override
-    public void updateSession(@NotNull String sessionId, @Nullable String userId, @NotNull Map<String, Object> parameters) throws DBCException {
+    public void updateSession(@NotNull String sessionId, @NotNull Map<String, Object> parameters) throws DBCException {
+        String userId = getUserIdOrThrow();
         try (Connection dbCon = database.openConnection()) {
             try (PreparedStatement dbStat = dbCon.prepareStatement(
                 "UPDATE CB_SESSION SET USER_ID=?,LAST_ACCESS_TIME=?,LAST_ACCESS_REMOTE_ADDRESS=?,LAST_ACCESS_USER_AGENT=?,LAST_ACCESS_INSTANCE_ID=? WHERE SESSION_ID=?")) {
@@ -1697,8 +1753,21 @@ public class CBEmbeddedSecurityController implements SMAdminController, SMAuthen
     }
 
     @NotNull
+    private String getSubjectId() {
+        SMCredentials activeUserCredentials = credentialsProvider.getActiveUserCredentials();
+
+        if (activeUserCredentials == null || activeUserCredentials.getUserId() == null) {
+            return application.getAppConfiguration().getAnonymousUserTeam();
+        } else {
+            return activeUserCredentials.getUserId();
+        }
+    }
+
+    @NotNull
     @Override
-    public List<SMObjectPermissions> getAllAvailableObjectsPermissions(@NotNull String subjectId, @NotNull SMObjectType objectType) throws DBException {
+    public List<SMObjectPermissions> getAllAvailableObjectsPermissions(@NotNull SMObjectType objectType) throws DBException {
+
+        String subjectId = getSubjectId();
         Set<String> allSubjects = getAllLinkedSubjects(subjectId);
         try (Connection dbCon = database.openConnection()) {
             {
@@ -1935,6 +2004,14 @@ public class CBEmbeddedSecurityController implements SMAdminController, SMAuthen
 
     private String buildRedirectLink(String originalLink, String authId) {
         return originalLink + "?authId=" + authId;
+    }
+
+    private String getUserIdOrThrow() throws SMException {
+        SMCredentials activeUserCredentials = credentialsProvider.getActiveUserCredentials();
+        if (activeUserCredentials == null || activeUserCredentials.getUserId() == null) {
+            throw new SMException("User not authenticated");
+        }
+        return activeUserCredentials.getUserId();
     }
 
 }
