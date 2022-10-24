@@ -3,6 +3,7 @@
     <!-- Resource mappings -->
     <extension point="org.jkiss.dbeaver.resources">
         <resource name="drivers/oceanbase"/>
+        <resource name="drivers/tidb"/>
         <resource name="drivers/db2"/>
         <resource name="drivers/db2-jt400"/>
         <resource name="drivers/mysql/mysql8"/>
@@ -22,6 +23,7 @@
     <!-- Bundles  -->
     <extension point="org.jkiss.dbeaver.product.bundles">
         <bundle id="drivers.oceanbase" label="OceanBase drivers"/>
+        <bundle id="drivers.tidb" label="TiDB drivers"/>
         <bundle id="drivers.db2" label="DB2 drivers"/>
         <bundle id="drivers.jt400" label="DB2 iSeries drivers"/>
         <bundle id="drivers.mysql" label="MySQL drivers"/>
@@ -41,6 +43,7 @@
     <!-- Enabled drivers -->
     <extension point="io.cloudbeaver.driver">
         <driver id="oceanbase:alipay_oceanbase"/>
+        <driver id="mysql:tidb"/>
         <driver id="db2:db2"/>
         <driver id="db2_i:db2_iseries"/>
         <driver id="mysql:mysql8"/>

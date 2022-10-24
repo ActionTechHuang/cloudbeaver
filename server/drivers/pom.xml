@@ -26,6 +26,7 @@
         <module>sqlserver</module>
         <module>trino</module>
         <module>oceanbase</module>
+        <module>tidb</module>
     </modules>
 
     <build>
