@@ -21,14 +21,18 @@ cd ../..
 #[ ! -d react-data-grid ] && git clone https://github.com/dbeaver/react-data-grid.git
 
 echo "Pull dbeaver platform"
-[ ! -d dbeaver ] && git clone https://github.com/dbeaver/dbeaver.git
+[ ! -d dbeaver ] && git clone --depth 1 https://github.com/ActionTechHuang/dbeaver.git  -b sqle_22_2_0
 
 cd cloudbeaver/deploy
 
 echo "Build CloudBeaver server"
 
 cd ../server/product/aggregate
-mvn clean verify -Dheadless-platform
+#mvn clean verify -Dheadless-platform
+
+# 加速编译
+mvn -T 1C -U -e verify -Dheadless-platform -Dmaven.compile.fork=true -Dmaven.test.skip=true
+
 if [[ "$?" -ne 0 ]] ; then
   echo 'Could not perform package'; exit $rc
 fi
