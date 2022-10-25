@@ -1,3 +1,3 @@
 cd ..
-docker build -t sqle/cloudbeaver:2220 . --file ./docker/Dockerfile
+docker build -t sqle-cloudbeaver:22.2.0 . --file ./docker/Dockerfile
 

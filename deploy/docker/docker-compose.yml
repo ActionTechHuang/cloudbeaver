@@ -2,7 +2,7 @@ version: '3'
 services:
   cloudbeaver:
     build: .
-    container_name: cloudbeaver
+    container_name: sqle-cloudbeaver:22.2.0
     ports:
       - "8978:8978"
     volumes:
